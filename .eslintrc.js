@@ -51,6 +51,7 @@ module.exports = {
       'WithStatement',
     ],
     'no-underscore-dangle': 'off',
+    'no-unused-vars': ['error', { argsIgnorePattern: '_' }],
     'padding-line-between-statements': [
       'error',
       { blankLine: 'always', prev: ['const', 'let', 'var'], next: '*' },

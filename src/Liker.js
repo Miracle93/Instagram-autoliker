@@ -3,10 +3,66 @@ import path from 'path';
 import { Builder, By, until } from 'selenium-webdriver';
 import chrome from 'selenium-webdriver/chrome';
 
-import { sleep } from './utils';
+import { generatorBind, getRandomInRange, sleep } from './utils';
+
+/*
+  Стратегии:
+  1. Бесконечная
+  Лайкаем пока не выключат или пока не дойдем до конца.
+
+  2. По количеству лайков
+  Считаем сколько поставили лайков.
+
+  3. По времени
+  Лайкаем в течение n минут.
+
+  4. По времени с перерывами
+  Лайкаем в течение n минут. Ждем k минут, продолжаем еще n минут
+*/
 
 export default class Liker {
   driver = null;
+
+  baseUrl = 'https://www.instagram.com/';
+
+  likeCount = 0;
+
+  // eslint-disable-next-line class-methods-use-this
+  infinityStrategy() {
+    return function* () {
+      while (true) yield;
+    };
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  likeLimitStrategy() {
+    if (!process.env.LIKE_LIMIT) {
+      throw new Error('LIKE_LIMIT is required for this strategy');
+    }
+
+    return function* () {
+      while (this.likeCount < Number(process.env.LIKE_LIMIT)) {
+        yield;
+      }
+    };
+  }
+
+  getStrategyGenerator() {
+    switch (process.env.STRATEGY) {
+      case 'like limit':
+        return generatorBind(this, this.likeLimitStrategy());
+      case 'infinity':
+        return this.infinityStrategy();
+      default:
+        throw new Error(
+          'Strategy not found. Please specify the "STRATEGY" environment variable. Available strategies: "like limit", "infinity"',
+        );
+    }
+  }
+
+  async quit() {
+    this.driver.quit();
+  }
 
   async build() {
     try {
@@ -38,7 +94,7 @@ export default class Liker {
 
   async login() {
     try {
-      await this.driver.get('https://www.instagram.com/');
+      await this.driver.get(this.baseUrl);
 
       if (!(await this.isLogged())) {
         const loginForm = await this.driver.wait(
@@ -57,29 +113,53 @@ export default class Liker {
     }
   }
 
-  async infinityStrategy() {
-    await this.driver.get('https://www.instagram.com/');
+  async run() {
+    await this.driver.get(this.baseUrl);
 
-    const isRunning = true;
-
-    const posts = await this.driver.findElements(
-      By.css('article[role=presentation]'),
-    );
+    const generator = this.getStrategyGenerator();
 
     /* eslint-disable no-await-in-loop */
-    for (const post of posts) {
+    // eslint-disable-next-line no-unused-vars
+    for (const _ of generator()) {
+      const posts = await this.driver.findElements(
+        By.css('article[role=presentation]:not([data-view=viewed])'),
+      );
+
+      /* eslint-disable no-await-in-loop */
+      for (const post of posts) {
+        await this.setLike(post);
+      }
+      /* eslint-enable no-await-in-loop */
+    }
+  }
+
+  async start() {
+    await this.build();
+    await this.login();
+    await this.run();
+  }
+
+  async setLike(post) {
+    try {
       const like = await post.findElement(By.css('svg[aria-label="Нравится"]'));
 
       await this.driver.executeScript(
-        'arguments[0].scrollIntoView(true);',
+        'arguments[0].scrollIntoView({ block: "center", behavior: "smooth" });',
         like,
       );
-
-      await sleep(2000);
+      await this.driver.executeScript(
+        'arguments[0].setAttribute("data-view", "viewed")',
+        post,
+      );
 
       // await like.click();
+
+      this.likeCount += 1;
+
+      await sleep(getRandomInRange(2000, 10000));
+    } catch (error) {
+      if (error.name !== 'NoSuchElementError') throw error;
     }
-    /* eslint-enable no-await-in-loop */
   }
 
   async isLogged() {
@@ -90,9 +170,5 @@ export default class Liker {
     } catch (error) {
       return false;
     }
-  }
-
-  async quit() {
-    this.driver.quit();
   }
 }

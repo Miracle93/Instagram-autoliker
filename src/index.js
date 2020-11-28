@@ -16,9 +16,7 @@ process.on('SIGINT', shutdown);
 // eslint-disable-next-line func-names
 (async function main() {
   try {
-    await liker.build();
-    await liker.login();
-    await liker.infinityStrategy();
+    await liker.start();
   } catch (error) {
     console.error(error);
   } finally {
