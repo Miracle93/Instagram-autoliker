@@ -5,27 +5,14 @@ import chrome from 'selenium-webdriver/chrome';
 
 import { generatorBind, getRandomInRange, sleep } from './utils';
 
-/*
-  Стратегии:
-  1. Бесконечная
-  Лайкаем пока не выключат или пока не дойдем до конца.
-
-  2. По количеству лайков
-  Считаем сколько поставили лайков.
-
-  3. По времени
-  Лайкаем в течение n минут.
-
-  4. По времени с перерывами
-  Лайкаем в течение n минут. Ждем k минут, продолжаем еще n минут
-*/
-
 export default class Liker {
   driver = null;
 
   baseUrl = 'https://www.instagram.com/';
 
   likeCount = 0;
+
+  startTime = new Date().getTime() / 1000;
 
   // eslint-disable-next-line class-methods-use-this
   infinityStrategy() {
@@ -47,15 +34,37 @@ export default class Liker {
     };
   }
 
+  // eslint-disable-next-line class-methods-use-this
+  timeLimitStrategy() {
+    if (!process.env.TIME_LIMIT) {
+      throw new Error('TIME_LIMIT is required for this strategy');
+    }
+
+    return function* () {
+      let isRunning = true;
+
+      while (isRunning) {
+        const currentTime = new Date().getTime() / 1000;
+
+        isRunning =
+          currentTime - this.startTime <= Number(process.env.TIME_LIMIT);
+
+        yield;
+      }
+    };
+  }
+
   getStrategyGenerator() {
     switch (process.env.STRATEGY) {
-      case 'like limit':
-        return generatorBind(this, this.likeLimitStrategy());
       case 'infinity':
         return this.infinityStrategy();
+      case 'like limit':
+        return generatorBind(this, this.likeLimitStrategy());
+      case 'time limit':
+        return generatorBind(this, this.timeLimitStrategy());
       default:
         throw new Error(
-          'Strategy not found. Please specify the "STRATEGY" environment variable. Available strategies: "like limit", "infinity"',
+          'Strategy not found. Please specify the "STRATEGY" environment variable. Available strategies: "infinity", "like limit", "time limit',
         );
     }
   }
@@ -152,11 +161,13 @@ export default class Liker {
         post,
       );
 
-      // await like.click();
+      await like.click();
 
       this.likeCount += 1;
 
-      await sleep(getRandomInRange(2000, 10000));
+      await sleep(
+        getRandomInRange(process.env.SLEEP_MIN, process.env.SLEEP_MAX),
+      );
     } catch (error) {
       if (error.name !== 'NoSuchElementError') throw error;
     }
