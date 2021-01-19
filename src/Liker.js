@@ -73,6 +73,50 @@ export default class Liker {
     this.driver.quit();
   }
 
+  async isLogged() {
+    try {
+      await this.driver.findElement(By.className('logged-in'));
+
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async goToHomePage() {
+    if ((await this.driver.getCurrentUrl()) !== this.baseUrl) {
+      await this.driver.get(this.baseUrl);
+    }
+  }
+
+  async setLike(post) {
+    try {
+      const like = await post.findElement(By.css('svg[aria-label="Нравится"]'));
+
+      await this.driver.executeScript(
+        'arguments[0].scrollIntoView({ block: "center", behavior: "smooth" });',
+        like,
+      );
+      await this.driver.executeScript(
+        'arguments[0].setAttribute("data-view", "viewed")',
+        post,
+      );
+
+      await like.click();
+
+      this.likeCount += 1;
+
+      await sleep(
+        getRandomInRange(
+          Number(process.env.SLEEP_MIN),
+          Number(process.env.SLEEP_MAX),
+        ),
+      );
+    } catch (error) {
+      if (error.name !== 'NoSuchElementError') throw error;
+    }
+  }
+
   async build() {
     try {
       const chromeService = new chrome.ServiceBuilder(
@@ -103,7 +147,7 @@ export default class Liker {
 
   async login() {
     try {
-      await this.driver.get(this.baseUrl);
+      await this.goToHomePage();
 
       if (!(await this.isLogged())) {
         const loginForm = await this.driver.wait(
@@ -117,28 +161,37 @@ export default class Liker {
         await password.sendKeys(process.env.PASSWORD);
         await loginForm.submit();
       }
+
+      await this.driver.wait(
+        until.elementLocated(By.className('logged-in')),
+        3000,
+      );
     } catch (error) {
       throw new Error(`Login error: ${error.message}`);
     }
   }
 
   async run() {
-    await this.driver.get(this.baseUrl);
+    try {
+      await this.goToHomePage();
 
-    const generator = this.getStrategyGenerator();
-
-    /* eslint-disable no-await-in-loop */
-    // eslint-disable-next-line no-unused-vars
-    for (const _ of generator()) {
-      const posts = await this.driver.findElements(
-        By.css('article[role=presentation]:not([data-view=viewed])'),
-      );
+      const generator = this.getStrategyGenerator();
 
       /* eslint-disable no-await-in-loop */
-      for (const post of posts) {
-        await this.setLike(post);
+      // eslint-disable-next-line no-unused-vars
+      for (const _ of generator()) {
+        const posts = await this.driver.findElements(
+          By.css('article[role=presentation]:not([data-view=viewed])'),
+        );
+
+        /* eslint-disable no-await-in-loop */
+        for (const post of posts) {
+          await this.setLike(post);
+        }
+        /* eslint-enable no-await-in-loop */
       }
-      /* eslint-enable no-await-in-loop */
+    } catch (error) {
+      throw new Error(`Something went wrong while running: ${error.message}`);
     }
   }
 
@@ -146,40 +199,5 @@ export default class Liker {
     await this.build();
     await this.login();
     await this.run();
-  }
-
-  async setLike(post) {
-    try {
-      const like = await post.findElement(By.css('svg[aria-label="Нравится"]'));
-
-      await this.driver.executeScript(
-        'arguments[0].scrollIntoView({ block: "center", behavior: "smooth" });',
-        like,
-      );
-      await this.driver.executeScript(
-        'arguments[0].setAttribute("data-view", "viewed")',
-        post,
-      );
-
-      await like.click();
-
-      this.likeCount += 1;
-
-      await sleep(
-        getRandomInRange(process.env.SLEEP_MIN, process.env.SLEEP_MAX),
-      );
-    } catch (error) {
-      if (error.name !== 'NoSuchElementError') throw error;
-    }
-  }
-
-  async isLogged() {
-    try {
-      await this.driver.findElement(By.className('logged-in'));
-
-      return true;
-    } catch (error) {
-      return false;
-    }
   }
 }
